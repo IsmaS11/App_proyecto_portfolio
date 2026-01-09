@@ -84,43 +84,63 @@ st.subheader("🔍 Diagnóstico de Fallas Específicas")
 
 if st.button("Ejecutar Análisis de Riesgo"):
     if modelos is None:
-        st.error("⚠️ Error: No se encontró el archivo 'mis_modelos_industriales.pkl'. Asegúrate de que esté en la misma carpeta.")
+        st.error("⚠️ Error: No se encontró el archivo .pkl")
     else:
-        # Definimos las claves exactas que pediste
+        # 1. DEFINIMOS LAS LLAVES EXACTAS QUE TIENE TU DICCIONARIO
+        # (Copiadas tal cual salieron de tu script de inspección)
         fallas_a_evaluar = [
-            'Falla_Desgaste (TWF)'
-            'Falla_Calor (HDF)'
-            'Falla_Potencia (PWF)'
+            'Falla_Desgaste (TWF)',
+            'Falla_Calor (HDF)',
+            'Falla_Potencia (PWF)',
             'Falla_Sobrecarga (OSF)'
         ]
         
-        # Creamos columnas para mostrar los resultados lado a lado
+        # Variables para calcular el estado general "virtual"
+        hay_falla_general = False
+        max_probabilidad = 0.0
+        mensaje_falla = ""
+
+        # 2. CREAMOS LAS COLUMNAS PARA MOSTRAR LOS RESULTADOS
         cols = st.columns(len(fallas_a_evaluar))
         
-        for i, nombre_falla in enumerate(fallas_a_evaluar):
+        for i, nombre_falla_key in enumerate(fallas_a_evaluar):
             with cols[i]:
                 try:
-                    # Obtenemos el modelo específico del diccionario
-                    modelo_actual = modelos[nombre_falla]
+                    # Obtenemos el modelo usando la LLAVE EXACTA
+                    modelo_actual = modelos[nombre_falla_key]
                     
-                    # Predecimos la probabilidad (usamos la columna 1 que es la probabilidad de "Sí Falla")
-                    # NOTA: El modelo recibirá df_input que YA TIENE las columnas calculadas (power, temp_delta, etc)
+                    # Predecimos
                     probabilidad = modelo_actual.predict_proba(df_input)[0][1]
-                    prediccion = modelo_actual.predict(df_input)[0]
                     
-                    # Formato visual
-                    st.markdown(f"**{nombre_falla.replace('_', ' ').title()}**")
-                    st.metric(label="Probabilidad", value=f"{probabilidad:.1%}")
+                    # Actualizamos el estado general (Lógica: Si falla uno, falla la máquina)
+                    if probability > 0.5:
+                        hay_falla_general = True
+                        mensaje_falla = nombre_falla_key
                     
-                    if probabilidad > 0.5: # Umbral estándar (puedes ajustarlo)
-                        st.error("🚨 FALLA DETECTADA")
+                    if probability > max_probabilidad:
+                        max_probabilidad = probability
+                    
+                    # VISUALIZACIÓN INDIVIDUAL
+                    # Usamos un nombre más corto para el título visual (quitamos el paréntesis si quieres)
+                    titulo_corto = nombre_falla_key.split('(')[0].strip()
+                    st.metric(label=titulo_corto, value=f"{probabilidad:.1%}")
+                    
+                    if probability > 0.5:
+                        st.error("🚨 FALLA")
                     else:
                         st.success("✅ OK")
                         
                 except KeyError:
-                    st.warning(f"Modelo '{nombre_falla}' no encontrado en el diccionario.")
+                    st.warning(f"Clave '{nombre_falla_key}' no encontrada.")
                 except Exception as e:
-                    st.error(f"Error al procesar: {e}")
+                    st.error(f"Error: {e}")
+
+        # 3. RESUMEN GENERAL (INFERIDO)
+        st.divider()
+        if hay_falla_general:
+            st.error(f"🚨 ALARMA DE PLANTA: Se recomienda detener la máquina. Causa probable: {mensaje_falla}")
+        else:
+            st.success(f"✅ MÁQUINA OPERATIVA: Ningún modelo detecta riesgo crítico (Máx riesgo: {max_probabilidad:.1%})")
 
 st.markdown("---")
 st.caption("Sistema de Mantenimiento Inteligente - Portfolio de Ingeniería")
