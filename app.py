@@ -74,7 +74,6 @@ df_visual['wear_torque_product'] = df_visual['tool_wear_min'] * df_visual['torqu
 # Mostramos la tabla completa con cálculos
 st.dataframe(df_visual.style.format("{:.2f}"))
 
-# --- 4. PANEL DE PREDICCIONES ---
 st.divider()
 st.subheader("🔍 Diagnóstico de Fallas Específicas")
 
@@ -90,8 +89,8 @@ if st.button("Ejecutar Análisis de Riesgo"):
             'Falla_Sobrecarga (OSF)'
         ]
         
-        # 2. PREPARACIÓN DE DATOS (PARCHE CRÍTICO)
-        # Definimos las columnas que el modelo "viejo" espera
+        # 2. DEFINIMOS LAS 6 COLUMNAS EXACTAS QUE EL MODELO CONOCE
+        # (El orden es vital, debe coincidir con el segundo array de tu error)
         columnas_modelo = [
             'air_temp_k', 
             'process_temp_k', 
@@ -101,60 +100,59 @@ if st.button("Ejecutar Análisis de Riesgo"):
             'type_encoded'
         ]
         
-        # --- CORRECCIÓN DEL ERROR "NameError" ---
-        # Primero creamos la copia
-        df_para_modelo = df_input.copy()
-        
-        # Luego filtramos dejando solo las 6 columnas originales
-        df_para_modelo = df_para_modelo[columnas_modelo]
+        # --- FILTRADO QUIRÚRGICO ---
+        # Creamos un dataframe NUEVO que solo tenga esas 6 columnas
+        # Esto elimina automáticamente 'power', 'temp_delta' y 'wear_torque_product'
+        try:
+            df_para_modelo = df_input[columnas_modelo].copy()
+            
+            # Variables para resumen
+            hay_falla_general = False
+            max_probabilidad = 0.0
+            mensaje_falla = ""
 
-        # Variables para resumen
-        hay_falla_general = False
-        max_probabilidad = 0.0
-        mensaje_falla = ""
-
-        # 3. BUCLE DE PREDICCIÓN
-        cols = st.columns(len(fallas_a_evaluar))
-        
-        for i, nombre_falla_key in enumerate(fallas_a_evaluar):
-            with cols[i]:
-                try:
-                    modelo_actual = modelos[nombre_falla_key]
-                    
-                    # Predecimos usando el DataFrame limpio (6 columnas)
-                    probabilidad = modelo_actual.predict_proba(df_para_modelo)[0][1]
-                    
-                    # --- CORRECCIÓN DEL ERROR "probability" vs "probabilidad" ---
-                    
-                    # Lógica de resumen
-                    if probabilidad > 0.5:
-                        hay_falla_general = True
-                        mensaje_falla = nombre_falla_key
-                    
-                    if probabilidad > max_probabilidad:
-                        max_probabilidad = probabilidad
-                    
-                    # Visualización
-                    titulo_corto = nombre_falla_key.split('(')[0].strip()
-                    st.metric(label=titulo_corto, value=f"{probabilidad:.1%}")
-                    
-                    if probabilidad > 0.5:
-                        st.error("🚨 FALLA")
-                    else:
-                        st.success("✅ OK")
+            # 3. BUCLE DE PREDICCIÓN
+            cols = st.columns(len(fallas_a_evaluar))
+            
+            for i, nombre_falla_key in enumerate(fallas_a_evaluar):
+                with cols[i]:
+                    try:
+                        modelo_actual = modelos[nombre_falla_key]
                         
-                except KeyError:
-                    st.warning(f"Falta modelo: {nombre_falla_key}")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                        # Predecimos usando el DataFrame limpio (6 columnas)
+                        probabilidad = modelo_actual.predict_proba(df_para_modelo)[0][1]
+                        
+                        # Lógica de resumen
+                        if probabilidad > 0.5:
+                            hay_falla_general = True
+                            mensaje_falla = nombre_falla_key
+                        
+                        if probabilidad > max_probabilidad:
+                            max_probabilidad = probabilidad
+                        
+                        # Visualización
+                        titulo_corto = nombre_falla_key.split('(')[0].strip()
+                        st.metric(label=titulo_corto, value=f"{probabilidad:.1%}")
+                        
+                        if probabilidad > 0.5:
+                            st.error("🚨 FALLA")
+                        else:
+                            st.success("✅ OK")
+                            
+                    except KeyError:
+                        st.warning(f"Falta modelo: {nombre_falla_key}")
+                    except Exception as e:
+                        st.error(f"Error en modelo {nombre_falla_key}: {e}")
 
-        # 4. RESUMEN FINAL
-        st.divider()
-        if hay_falla_general:
-            st.error(f"🚨 ALARMA DE PLANTA: Se recomienda detener la máquina. Causa probable: {mensaje_falla}")
-        else:
-            st.success(f"✅ MÁQUINA OPERATIVA: Ningún modelo detecta riesgo crítico (Máx riesgo: {max_probabilidad:.1%})")
+            # 4. RESUMEN FINAL
+            st.divider()
+            if hay_falla_general:
+                st.error(f"🚨 ALARMA DE PLANTA: Se recomienda detener la máquina. Causa probable: {mensaje_falla}")
+            else:
+                st.success(f"✅ MÁQUINA OPERATIVA: Ningún modelo detecta riesgo crítico (Máx riesgo: {max_probabilidad:.1%})")
 
+        except KeyError as e:
+            st.error(f"Error de Columnas: El modelo busca la columna {e} y no la encuentra en los datos.")
 st.markdown("---")
 st.caption("Sistema de Mantenimiento Inteligente - Portfolio de Ingeniería")
 st.caption("Desarrollado por Ismael Benjamin Sosa - Ingeniero Industrial & Data Analyst")
