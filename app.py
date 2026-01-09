@@ -48,7 +48,7 @@ def obtener_datos_usuario():
     
     # Creamos el DataFrame inicial con los datos crudos
     datos_crudos = {
-        'type': tipo_valor,
+        'type_encoded': tipo_valor,
         'air_temp_k': air_temp,
         'process_temp_k': process_temp,
         'rotational_speed_rpm': rpm,
