@@ -14,7 +14,7 @@ st.set_page_config(
 @st.cache_resource
 def cargar_modelos():
     try:
-        # Asegúrate de que este archivo contenga el diccionario con las claves correctas
+        # Asegúrate de que el nombre del archivo sea EXACTAMENTE el que tienes en la carpeta
         return joblib.load('best_models_xgb_mantenimiento.pkl')
     except FileNotFoundError:
         return None
@@ -32,23 +32,23 @@ fallas específicas basada en modelos de Machine Learning entrenados.
 st.sidebar.header("🎛️ Parámetros de Operación")
 
 def obtener_datos_usuario():
-    # Selector de Calidad (Type) con el mapeo que indicaste
+    # Selector de Calidad (Type)
     tipo_letra = st.sidebar.selectbox("Calidad del Producto (Type)", ["L (Low)", "M (Medium)", "H (High)"])
     
-    # Mapeo específico solicitado: L=0, M=1, H=3
+    # Mapeo: L=0, M=1, H=3
     mapeo_tipo = {"L (Low)": 0, "M (Medium)": 1, "H (High)": 3}
     tipo_valor = mapeo_tipo[tipo_letra]
 
-    # Sliders con los rangos y nombres solicitados
+    # Sliders
     air_temp = st.sidebar.slider("Temperatura Aire [K] (air_temp_k)", 295.0, 305.0, 300.0)
     process_temp = st.sidebar.slider("Temperatura Proceso [K] (process_temp_k)", 305.0, 315.0, 310.0)
     rpm = st.sidebar.slider("Velocidad Rotación [RPM] (rotational_speed_rpm)", 1100, 2900, 1500)
     torque = st.sidebar.slider("Torque [Nm] (torque_nm)", 3.0, 80.0, 40.0)
     wear = st.sidebar.slider("Desgaste Herramienta [min] (tool_wear_min)", 0, 250, 0)
     
-    # Creamos el DataFrame inicial con los datos crudos
+    # DataFrame inicial
     datos_crudos = {
-        'type_encoded': tipo_valor,
+        'type_encoded': tipo_valor, # Ya lo guardamos con el nombre correcto
         'air_temp_k': air_temp,
         'process_temp_k': process_temp,
         'rotational_speed_rpm': rpm,
@@ -61,22 +61,18 @@ def obtener_datos_usuario():
 # Obtenemos el input base
 df_input = obtener_datos_usuario()
 
-# --- 3. MOTOR DE INGENIERÍA DE CARACTERÍSTICAS (TRANSFORMACIONES) ---
-# Aquí aplicamos EXACTAMENTE las mismas fórmulas que usaste en el entrenamiento
+# --- 3. MOTOR DE INGENIERÍA DE CARACTERÍSTICAS (VISUALIZACIÓN) ---
 st.subheader("📊 Variables Calculadas en Tiempo Real")
 
-# A. Delta de Temperatura
-df_input['temp_delta'] = df_input['process_temp_k'] - df_input['air_temp_k']
+# Calculamos variables extra SOLO para mostrar al usuario (Ingeniería)
+# Hacemos una copia para no afectar la visualización si luego filtramos
+df_visual = df_input.copy()
+df_visual['temp_delta'] = df_visual['process_temp_k'] - df_visual['air_temp_k']
+df_visual['power'] = df_visual['torque_nm'] * df_visual['rotational_speed_rpm'] * (2 * np.pi / 60)
+df_visual['wear_torque_product'] = df_visual['tool_wear_min'] * df_visual['torque_nm']
 
-# B. Potencia (Power)
-# Nota: np.pi requiere importar numpy
-df_input['power'] = df_input['torque_nm'] * df_input['rotational_speed_rpm'] * (2 * np.pi / 60)
-
-# C. Producto Desgaste x Torque
-df_input['wear_torque_product'] = df_input['tool_wear_min'] * df_input['torque_nm']
-
-# Mostramos al usuario lo que la IA está "viendo" (incluyendo las calculadas)
-st.dataframe(df_input.style.format("{:.2f}"))
+# Mostramos la tabla completa con cálculos
+st.dataframe(df_visual.style.format("{:.2f}"))
 
 # --- 4. PANEL DE PREDICCIONES ---
 st.divider()
@@ -86,16 +82,16 @@ if st.button("Ejecutar Análisis de Riesgo"):
     if modelos is None:
         st.error("⚠️ Error: No se encontró el archivo .pkl")
     else:
-        # 1. DEFINIMOS LAS LLAVES EXACTAS QUE TIENE TU DICCIONARIO
-        # (Copiadas tal cual salieron de tu script de inspección)
+        # 1. Definimos las llaves del diccionario de modelos
         fallas_a_evaluar = [
             'Falla_Desgaste (TWF)',
             'Falla_Calor (HDF)',
             'Falla_Potencia (PWF)',
             'Falla_Sobrecarga (OSF)'
         ]
-        # --- CORRECCIÓN DE COLUMNAS (PARCHE) ---
-        # 2. Definir el orden EXACTO que pide el error
+        
+        # 2. PREPARACIÓN DE DATOS (PARCHE CRÍTICO)
+        # Definimos las columnas que el modelo "viejo" espera
         columnas_modelo = [
             'air_temp_k', 
             'process_temp_k', 
@@ -105,15 +101,19 @@ if st.button("Ejecutar Análisis de Riesgo"):
             'type_encoded'
         ]
         
-        # 3. Filtrar: Nos quedamos solo con esas 6 y en ese orden
-        # (Esto elimina 'power', 'temp_delta', etc. porque el modelo actual no las conoce)
+        # --- CORRECCIÓN DEL ERROR "NameError" ---
+        # Primero creamos la copia
+        df_para_modelo = df_input.copy()
+        
+        # Luego filtramos dejando solo las 6 columnas originales
         df_para_modelo = df_para_modelo[columnas_modelo]
-        # Variables para calcular el estado general "virtual"
+
+        # Variables para resumen
         hay_falla_general = False
         max_probabilidad = 0.0
         mensaje_falla = ""
 
-        # 2. CREAMOS LAS COLUMNAS PARA MOSTRAR LOS RESULTADOS
+        # 3. BUCLE DE PREDICCIÓN
         cols = st.columns(len(fallas_a_evaluar))
         
         for i, nombre_falla_key in enumerate(fallas_a_evaluar):
@@ -121,33 +121,34 @@ if st.button("Ejecutar Análisis de Riesgo"):
                 try:
                     modelo_actual = modelos[nombre_falla_key]
                     
-                    # ¡IMPORTANTE! Usamos el dataframe corregido aquí:
+                    # Predecimos usando el DataFrame limpio (6 columnas)
                     probabilidad = modelo_actual.predict_proba(df_para_modelo)[0][1]
                     
-                    # Actualizamos el estado general (Lógica: Si falla uno, falla la máquina)
-                    if probability > 0.5:
+                    # --- CORRECCIÓN DEL ERROR "probability" vs "probabilidad" ---
+                    
+                    # Lógica de resumen
+                    if probabilidad > 0.5:
                         hay_falla_general = True
                         mensaje_falla = nombre_falla_key
                     
-                    if probability > max_probabilidad:
-                        max_probabilidad = probability
+                    if probabilidad > max_probabilidad:
+                        max_probabilidad = probabilidad
                     
-                    # VISUALIZACIÓN INDIVIDUAL
-                    # Usamos un nombre más corto para el título visual (quitamos el paréntesis si quieres)
+                    # Visualización
                     titulo_corto = nombre_falla_key.split('(')[0].strip()
                     st.metric(label=titulo_corto, value=f"{probabilidad:.1%}")
                     
-                    if probability > 0.5:
+                    if probabilidad > 0.5:
                         st.error("🚨 FALLA")
                     else:
                         st.success("✅ OK")
                         
                 except KeyError:
-                    st.warning(f"Clave '{nombre_falla_key}' no encontrada.")
+                    st.warning(f"Falta modelo: {nombre_falla_key}")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-        # 3. RESUMEN GENERAL (INFERIDO)
+        # 4. RESUMEN FINAL
         st.divider()
         if hay_falla_general:
             st.error(f"🚨 ALARMA DE PLANTA: Se recomienda detener la máquina. Causa probable: {mensaje_falla}")
