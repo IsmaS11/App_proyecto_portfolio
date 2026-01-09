@@ -88,10 +88,10 @@ if st.button("Ejecutar Análisis de Riesgo"):
     else:
         # Definimos las claves exactas que pediste
         fallas_a_evaluar = [
-            'tool_wear_failure', 
-            'heat_dissipation_failure', 
-            'power_failure', 
-            'overstrain_failure'
+            'Falla_Desgaste (TWF)'
+            'Falla_Calor (HDF)'
+            'Falla_Potencia (PWF)'
+            'Falla_Sobrecarga (OSF)'
         ]
         
         # Creamos columnas para mostrar los resultados lado a lado
