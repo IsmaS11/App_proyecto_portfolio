@@ -14,7 +14,7 @@ st.set_page_config(
 @st.cache_resource
 def cargar_modelos():
     try:
-        # Asegúrate de que el nombre del archivo sea EXACTAMENTE el que tienes en la carpeta
+        # Asegúrate de que el nombre sea el de tu archivo real
         return joblib.load('best_models_xgb_mantenimiento.pkl')
     except FileNotFoundError:
         return None
@@ -46,33 +46,32 @@ def obtener_datos_usuario():
     torque = st.sidebar.slider("Torque [Nm] (torque_nm)", 3.0, 80.0, 40.0)
     wear = st.sidebar.slider("Desgaste Herramienta [min] (tool_wear_min)", 0, 250, 0)
     
-    # DataFrame inicial
-    datos_crudos = {
-        'type_encoded': tipo_valor, # Ya lo guardamos con el nombre correcto
+    # DataFrame inicial con datos crudos
+    datos = {
         'air_temp_k': air_temp,
         'process_temp_k': process_temp,
         'rotational_speed_rpm': rpm,
         'torque_nm': torque,
-        'tool_wear_min': wear
+        'tool_wear_min': wear,
+        'type_encoded': tipo_valor # Nombre ya corregido para el modelo
     }
     
-    return pd.DataFrame(datos_crudos, index=[0])
+    return pd.DataFrame(datos, index=[0])
 
 # Obtenemos el input base
 df_input = obtener_datos_usuario()
 
-# --- 3. MOTOR DE INGENIERÍA DE CARACTERÍSTICAS (VISUALIZACIÓN) ---
+# --- 3. MOTOR DE INGENIERÍA DE CARACTERÍSTICAS ---
 st.subheader("📊 Variables Calculadas en Tiempo Real")
 
-# Calculamos variables extra SOLO para mostrar al usuario (Ingeniería)
-# Hacemos una copia para no afectar la visualización si luego filtramos
-df_visual = df_input.copy()
-df_visual['temp_delta'] = df_visual['process_temp_k'] - df_visual['air_temp_k']
-df_visual['power'] = df_visual['torque_nm'] * df_visual['rotational_speed_rpm'] * (2 * np.pi / 60)
-df_visual['wear_torque_product'] = df_visual['tool_wear_min'] * df_visual['torque_nm']
+# APLICAMOS LOS CÁLCULOS DIRECTAMENTE AL DATAFRAME PRINCIPAL
+# (Esto soluciona el error: ahora df_input SÍ tendrá las columnas extras)
+df_input['temp_delta'] = df_input['process_temp_k'] - df_input['air_temp_k']
+df_input['power'] = df_input['torque_nm'] * df_input['rotational_speed_rpm'] * (2 * np.pi / 60)
+df_input['wear_torque_product'] = df_input['tool_wear_min'] * df_input['torque_nm']
 
-# Mostramos la tabla completa con cálculos
-st.dataframe(df_visual.style.format("{:.2f}"))
+# Mostramos la tabla (ahora tiene 9 columnas)
+st.dataframe(df_input.style.format("{:.2f}"))
 
 # --- 4. PANEL DE PREDICCIONES ---
 st.divider()
@@ -90,34 +89,30 @@ if st.button("Ejecutar Análisis de Riesgo"):
             'Falla_Sobrecarga (OSF)'
         ]
         
-        # 2. DEFINIMOS LAS 9 COLUMNAS EXACTAS (ORDEN ESTRICTO DEL MODELO)
-        # Este orden lo copié exactamente de tu mensaje de error
+        # 2. DEFINIMOS EL ORDEN EXACTO DE COLUMNAS PARA EL MODELO
+        # (Copiado de tu X.train)
         columnas_modelo = [
-            'air_temp_k', 
-            'process_temp_k', 
-            'rotational_speed_rpm', 
-            'torque_nm', 
-            'tool_wear_min', 
-            'temp_delta',          # <--- Ahora sí incluimos las calculadas
-            'power', 
-            'wear_torque_product', 
+            'air_temp_k',
+            'process_temp_k',
+            'rotational_speed_rpm',
+            'torque_nm',
+            'tool_wear_min',
+            'temp_delta',
+            'power',
+            'wear_torque_product',
             'type_encoded'
         ]
         
-        # --- PREPARACIÓN DE DATOS ---
         try:
-            # Hacemos copia para no romper nada
-            df_para_modelo = df_input.copy()
-            
-            # FILTRADO: Nos aseguramos de enviar SOLO esas 9 columnas y en ESE ORDEN
-            df_para_modelo = df_para_modelo[columnas_modelo]
+            # 3. PREPARAR DATOS: Reordenamos las columnas para que coincidan con el modelo
+            df_para_modelo = df_input[columnas_modelo].copy()
 
             # Variables para resumen
             hay_falla_general = False
             max_probabilidad = 0.0
             mensaje_falla = ""
 
-            # 3. BUCLE DE PREDICCIÓN
+            # 4. BUCLE DE PREDICCIÓN
             cols = st.columns(len(fallas_a_evaluar))
             
             for i, nombre_falla_key in enumerate(fallas_a_evaluar):
@@ -147,21 +142,17 @@ if st.button("Ejecutar Análisis de Riesgo"):
                             
                     except KeyError:
                         st.warning(f"Falta modelo: {nombre_falla_key}")
-                    except Exception as e:
-                        # Mostramos el error exacto si vuelve a fallar
-                        st.error(f"Error en {nombre_falla_key}: {e}")
 
-            # 4. RESUMEN FINAL
+            # 5. RESUMEN FINAL
             st.divider()
             if hay_falla_general:
                 st.error(f"🚨 ALARMA DE PLANTA: Se recomienda detener la máquina. Causa probable: {mensaje_falla}")
             else:
                 st.success(f"✅ MÁQUINA OPERATIVA: Ningún modelo detecta riesgo crítico (Máx riesgo: {max_probabilidad:.1%})")
 
-        except KeyError as e:
-            st.error(f"Error de Columnas: Falta la columna {e}. Verifica los nombres.")
         except Exception as e:
-            st.error(f"Error General: {e}")
+            st.error(f"Error al procesar los datos: {e}")
+
 st.markdown("---")
 st.caption("Sistema de Mantenimiento Inteligente - Portfolio de Ingeniería")
 st.caption("Desarrollado por Ismael Benjamin Sosa - Ingeniero Industrial & Data Analyst")
