@@ -74,6 +74,7 @@ df_visual['wear_torque_product'] = df_visual['tool_wear_min'] * df_visual['torqu
 # Mostramos la tabla completa con cálculos
 st.dataframe(df_visual.style.format("{:.2f}"))
 
+# --- 4. PANEL DE PREDICCIONES ---
 st.divider()
 st.subheader("🔍 Diagnóstico de Fallas Específicas")
 
@@ -89,23 +90,28 @@ if st.button("Ejecutar Análisis de Riesgo"):
             'Falla_Sobrecarga (OSF)'
         ]
         
-        # 2. DEFINIMOS LAS 6 COLUMNAS EXACTAS QUE EL MODELO CONOCE
-        # (El orden es vital, debe coincidir con el segundo array de tu error)
+        # 2. DEFINIMOS LAS 9 COLUMNAS EXACTAS (ORDEN ESTRICTO DEL MODELO)
+        # Este orden lo copié exactamente de tu mensaje de error
         columnas_modelo = [
             'air_temp_k', 
             'process_temp_k', 
             'rotational_speed_rpm', 
             'torque_nm', 
             'tool_wear_min', 
+            'temp_delta',          # <--- Ahora sí incluimos las calculadas
+            'power', 
+            'wear_torque_product', 
             'type_encoded'
         ]
         
-        # --- FILTRADO QUIRÚRGICO ---
-        # Creamos un dataframe NUEVO que solo tenga esas 6 columnas
-        # Esto elimina automáticamente 'power', 'temp_delta' y 'wear_torque_product'
+        # --- PREPARACIÓN DE DATOS ---
         try:
-            df_para_modelo = df_input[columnas_modelo].copy()
+            # Hacemos copia para no romper nada
+            df_para_modelo = df_input.copy()
             
+            # FILTRADO: Nos aseguramos de enviar SOLO esas 9 columnas y en ESE ORDEN
+            df_para_modelo = df_para_modelo[columnas_modelo]
+
             # Variables para resumen
             hay_falla_general = False
             max_probabilidad = 0.0
@@ -119,7 +125,7 @@ if st.button("Ejecutar Análisis de Riesgo"):
                     try:
                         modelo_actual = modelos[nombre_falla_key]
                         
-                        # Predecimos usando el DataFrame limpio (6 columnas)
+                        # Predecimos
                         probabilidad = modelo_actual.predict_proba(df_para_modelo)[0][1]
                         
                         # Lógica de resumen
@@ -142,7 +148,8 @@ if st.button("Ejecutar Análisis de Riesgo"):
                     except KeyError:
                         st.warning(f"Falta modelo: {nombre_falla_key}")
                     except Exception as e:
-                        st.error(f"Error en modelo {nombre_falla_key}: {e}")
+                        # Mostramos el error exacto si vuelve a fallar
+                        st.error(f"Error en {nombre_falla_key}: {e}")
 
             # 4. RESUMEN FINAL
             st.divider()
@@ -152,7 +159,9 @@ if st.button("Ejecutar Análisis de Riesgo"):
                 st.success(f"✅ MÁQUINA OPERATIVA: Ningún modelo detecta riesgo crítico (Máx riesgo: {max_probabilidad:.1%})")
 
         except KeyError as e:
-            st.error(f"Error de Columnas: El modelo busca la columna {e} y no la encuentra en los datos.")
+            st.error(f"Error de Columnas: Falta la columna {e}. Verifica los nombres.")
+        except Exception as e:
+            st.error(f"Error General: {e}")
 st.markdown("---")
 st.caption("Sistema de Mantenimiento Inteligente - Portfolio de Ingeniería")
 st.caption("Desarrollado por Ismael Benjamin Sosa - Ingeniero Industrial & Data Analyst")
