@@ -94,7 +94,20 @@ if st.button("Ejecutar Análisis de Riesgo"):
             'Falla_Potencia (PWF)',
             'Falla_Sobrecarga (OSF)'
         ]
+        # --- CORRECCIÓN DE COLUMNAS (PARCHE) ---
+        # 2. Definir el orden EXACTO que pide el error
+        columnas_modelo = [
+            'air_temp_k', 
+            'process_temp_k', 
+            'rotational_speed_rpm', 
+            'torque_nm', 
+            'tool_wear_min', 
+            'type_encoded'
+        ]
         
+        # 3. Filtrar: Nos quedamos solo con esas 6 y en ese orden
+        # (Esto elimina 'power', 'temp_delta', etc. porque el modelo actual no las conoce)
+        df_para_modelo = df_para_modelo[columnas_modelo]
         # Variables para calcular el estado general "virtual"
         hay_falla_general = False
         max_probabilidad = 0.0
@@ -106,11 +119,10 @@ if st.button("Ejecutar Análisis de Riesgo"):
         for i, nombre_falla_key in enumerate(fallas_a_evaluar):
             with cols[i]:
                 try:
-                    # Obtenemos el modelo usando la LLAVE EXACTA
                     modelo_actual = modelos[nombre_falla_key]
                     
-                    # Predecimos
-                    probabilidad = modelo_actual.predict_proba(df_input)[0][1]
+                    # ¡IMPORTANTE! Usamos el dataframe corregido aquí:
+                    probabilidad = modelo_actual.predict_proba(df_para_modelo)[0][1]
                     
                     # Actualizamos el estado general (Lógica: Si falla uno, falla la máquina)
                     if probability > 0.5:
